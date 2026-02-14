@@ -1,4 +1,4 @@
-# Music Discovery Engine
+# Music Recommender Engine
 
 A Python desktop application that helps users discover new music. It connects to the Last.fm API to fetch real-time data about songs, albums, and artists.
 
