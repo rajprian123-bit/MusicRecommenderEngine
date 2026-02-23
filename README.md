@@ -21,21 +21,18 @@ A technical desktop application designed for high-fidelity music discovery, leve
 3. **Data Retrieval:** The application executes requests to the Last.fm API to fetch tracks and artists corresponding to the refined metadata.
 4. **Session Export:** Search results are aggregated in the GUI buffer and can be appended to a local text file for future reference.
 
-## Installation and Setup
-
-**1. Install Dependencies:**
-```bash
-pip install requests python-dotenv openai
-```
-
-**2. Configure Environment:**
-Create a `.env` file in the root directory with the following credentials (ensure `.env` is added to your `.gitignore`):
-```env
-LASTFM_API_KEY=your_lastfm_key
-OPENAI_API_KEY=your_openai_key
-```
-
-**3. Launch Application:**
-```bash
-python gui.py
-```
+## How to Run It
+1.  **Install the requirements:**
+    ```bash
+    pip install requests python-dotenv openai
+    ```
+2.  **Add your API Keys:**
+    Create a file named `.env` and paste your Last.fm and OpenAI keys:
+    ```text
+    LASTFM_API_KEY=your_lastfm_key_here
+    OPENAI_API_KEY=your_openai_key_here
+    ```
+3.  **Launch the App:**
+    ```bash
+    python gui.py
+    ```
