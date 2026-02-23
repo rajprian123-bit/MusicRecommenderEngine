@@ -1,274 +1,121 @@
 import os
 import requests
 from dotenv import load_dotenv
+from openai import OpenAI
 
 load_dotenv()
-API_KEY = os.getenv('LASTFM_API_KEY')
 
+# API Keys
+LASTFM_API_KEY = os.getenv('LASTFM_API_KEY')
+OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 
+client = OpenAI(api_key=OPENAI_API_KEY)
+
+# --- LOCAL FALLBACK DATA (Your original logic) ---
 GENRE_MAP = {
-    'rap': ['trap', 'drill', 'conscious hip-hop', 'gangsta rap', 'cloud rap'],
-    'rock': ['indie rock', 'alternative', 'classic rock', 'psychedelic rock', 'punk'],
-    'pop': ['k-pop', 'indie pop', 'dance pop', 'synthpop', 'hyperpop'],
-    'electronic': ['house', 'techno', 'dubstep', 'drum and bass', 'ambient'],
-    'jazz': ['bebop', 'smooth jazz', 'swing', 'fusion'],
-    'r&b': ['neo-soul', 'soul', 'contemporary r&b', 'funk'],
-    'metal': ['heavy metal', 'black metal', 'deathcore', 'thrash metal']
+    'rap': ['trap', 'drill', 'conscious hip-hop'],
+    'rock': ['indie rock', 'alternative', 'classic rock'],
+    'pop': ['k-pop', 'indie pop', 'synthpop'],
+    'electronic': ['house', 'techno', 'ambient'],
+    'jazz': ['bebop', 'smooth jazz', 'fusion'],
+    'r&b': ['neo-soul', 'soul', 'funk'],
+    'metal': ['heavy metal', 'black metal', 'thrash metal']
 }
 
+def get_fallback_tags(user_input):
+    """
+    Standard keyword matching if the AI fails.
+    """
+    user_input = user_input.lower()
+    for key in GENRE_MAP:
+        if key in user_input:
+            return GENRE_MAP[key]
+    return ["rock", "pop", "electronic"] # Absolute baseline
 
+# --- AI INTEGRATION LAYER ---
 
-def get_manual_subgenres(base_tag):
-    base_tag = base_tag.lower()
-    return GENRE_MAP.get(base_tag)
+def get_ai_refined_tags(user_input):
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "Translate user mood into 3 Last.fm genre tags. Output ONLY tags separated by commas."},
+                {"role": "user", "content": user_input}
+            ],
+            timeout=5 # Don't let the app hang forever
+        )
+        tags = response.choices[0].message.content.strip().split(", ")
+        return [t.strip().lower() for t in tags]
+    except Exception as e:
+        print(f"\n⚠️ AI Offline. Switching to Local Fallback Logic...")
+        return get_fallback_tags(user_input)
+
+# --- DATA FETCHING LAYER (Original Functions) ---
 
 def get_tracks_by_tag(tag):
-    output = ""  
     url = "http://ws.audioscrobbler.com/2.0/"
-    params = {
-        'method': 'tag.gettoptracks',
-        'tag': tag,
-        'api_key': API_KEY,
-        'limit': 20,
-        'format': 'json'
-    }
-    
-    try:
-        response = requests.get(url, params=params)
-        
-        if response.status_code == 200:
-            data = response.json()
-            
-            if 'tracks' in data and 'track' in data['tracks']:
-                list_of_songs = data['tracks']['track']
-                output += f"\nTop tracks for: {tag.upper()}\n"
-                for song in list_of_songs:
-                    title = song['name']
-                    if 'artist' in song and 'name' in song['artist']:
-                        artist = song['artist']['name']
-                        output += f"- {title} by {artist}\n"
-            else:
-                output += "No tracks found for this tag.\n"
-        else:
-            output += f"Error: API returned status code {response.status_code}\n"
-            
-    except Exception as e:
-        output += f"Network error: {e}\n"
-        
-    return output  
-
-def get_similar_tracks(artist_name):
-    output = f"\nLooking for artists similar to {artist_name}...\n"
-    
-    url = "http://ws.audioscrobbler.com/2.0/"
-    params = {
-        'method': 'artist.getsimilar',
-        'artist': artist_name,
-        'api_key': API_KEY,
-        'format': 'json',
-        'limit': 5,
-        'autocorrect': 1
-    }
-
-    try:
-        response = requests.get(url, params=params)
-        if response.status_code == 200:
-            data = response.json() 
-
-            if 'similarartists' in data and 'artist' in data['similarartists']:
-                artists = data['similarartists']['artist']
-            
-                if not artists:
-                    return "No similar artists found.\n"
-
-                output += f"\n🎧 If you like {artist_name}, you might like:\n"
-                
-                for i, artist_obj in enumerate(artists):
-                    similar_artist = artist_obj['name']
-                    output += f"\n{i+1}. {similar_artist}\n"
-                    output += get_top_track_for_artist(similar_artist)    
-            else:
-                output += "Could not find that artist.\n"   
-        else:
-            output += f"Error: API returned status code {response.status_code}\n"
-    except Exception as e:
-        output += f"Network error: {e}\n"
-        
-    return output
-
-def get_top_track_for_artist(artist_name):
-    output = ""
-    url = "http://ws.audioscrobbler.com/2.0/"
-    params = {
-        'method': 'artist.gettoptracks',
-        'artist': artist_name,
-        'api_key': API_KEY,
-        'limit': 1, 
-        'format': 'json'
-    }
-    
-    try:
-        r = requests.get(url, params=params)
-        d = r.json()
-        if 'toptracks' in d and 'track' in d['toptracks']:
-            tracks = d['toptracks']['track']
-            if isinstance(tracks, list) and len(tracks) > 0:
-                output = f"   ↳ Recommended: {tracks[0]['name']}\n"
-    except:
-        pass 
-    return output
-
-def get_current_hits():
-    output = "\nFetching Top Current Songs via Last.fm...\n"
-    
-    url = "http://ws.audioscrobbler.com/2.0/"
-    params = {
-        'method': 'chart.gettoptracks',
-        'api_key': API_KEY,
-        'limit': 10, 
-        'format': 'json'
-    }
+    params = {'method': 'tag.gettoptracks', 'tag': tag, 'api_key': LASTFM_API_KEY, 'limit': 10, 'format': 'json'}
     try:
         response = requests.get(url, params=params)
         if response.status_code == 200:
             data = response.json()
             if 'tracks' in data and 'track' in data['tracks']:
-                currenthits = data['tracks']['track']
-                output += "\nTop 10 Trending on Last.fm:\n"
-                for i, t in enumerate(currenthits):
-                    title = t['name']
-                    artist = t['artist']['name'] 
-                    output += f"{i+1}. {title} by {artist}\n"
-            else:
-                output += "Chart data not found.\n"
-        else:
-            output += f"Error: {response.status_code}\n"
-            
-    except Exception as e:
-        output += f"Network error: {e}\n"
-    return output
+                tracks = data['tracks']['track']
+                output = f"\n--- {tag.upper()} TOP TRACKS ---\n"
+                for song in tracks:
+                    output += f"- {song['name']} by {song['artist']['name']}\n"
+                return output
+    except: return ""
+    return ""
 
 def get_albums_by_genre(tag):
-    output = ""
     url = "http://ws.audioscrobbler.com/2.0/"
-    params = {
-        'method': 'tag.gettopalbums', 
-        'tag': tag,
-        'api_key': API_KEY,
-        'limit': 10,
-        'format': 'json'
-    }
-    
+    params = {'method': 'tag.gettopalbums', 'tag': tag, 'api_key': LASTFM_API_KEY, 'limit': 5, 'format': 'json'}
     try:
-        response = requests.get(url, params=params)
-        
-        if response.status_code == 200:
-            data = response.json()
-            if 'albums' in data and 'album' in data['albums']:
-                albums = data['albums']['album']
-                
-                output += f"\nTop {tag.title()} Albums:\n"
-                for i, album in enumerate(albums):
-                    title = album['name']
-                    artist = album['artist']['name']
-                    output += f"{i+1}. {title} by {artist}\n"
-            else:
-                output += "No albums found for this genre.\n"
-        else:
-            output += f"Error: {response.status_code}\n"
-            
-    except Exception as e:
-        output += f"Network error: {e}\n"
-    return output
+        r = requests.get(url, params=params).json()
+        albums = r['albums']['album']
+        output = f"\n💿 Top {tag.title()} Albums:\n"
+        for i, a in enumerate(albums):
+            output += f"{i+1}. {a['name']} by {a['artist']['name']}\n"
+        return output
+    except: return ""
 
-def get_top_albums(artist):
-    output = ""
+def get_current_hits():
     url = "http://ws.audioscrobbler.com/2.0/"
-    params = {
-        'method': 'artist.gettopalbums',
-        'api_key': API_KEY,
-        'limit': 5,  
-        'artist': artist,
-        'format': 'json',
-        'autocorrect': 1
-    }
-    
+    params = {'method': 'chart.gettoptracks', 'api_key': LASTFM_API_KEY, 'limit': 10, 'format': 'json'}
     try:
-        response = requests.get(url, params=params)
-        if response.status_code == 200:
-            data = response.json()
-            if 'topalbums' in data and 'album' in data['topalbums']:
-                albums = data['topalbums']['album']
-                output += f"\nTop Albums by {artist.title()}:\n"
-                for i, album in enumerate(albums):
-                    title = album['name']
-                    plays = album.get('playcount', 'N/A') 
-                    output += f"{i+1}. {title}\n"
-            else:
-                output += "Artist or albums not found.\n"
-        else:
-            output += f"Error: {response.status_code}\n"
-            
-    except Exception as e:
-        output += f"Network error: {e}\n"
-    return output
+        r = requests.get(url, params=params).json()
+        tracks = r['tracks']['track']
+        output = "\n🔥 Trending Right Now:\n"
+        for i, t in enumerate(tracks):
+            output += f"{i+1}. {t['name']} by {t['artist']['name']}\n"
+        return output
+    except: return "Error fetching charts."
+
+# --- MAIN CONTROL ---
 
 if __name__ == "__main__":
-    print("\n --- Music Recommender Engine ---")
-    if not API_KEY:
-        print("WARNING: API Key not found!")
-        
+    print("\n--- HYBRID MUSIC DISCOVERY ENGINE ---")
+    
     while True:
-        print("\n" + "="*40)
-        category = input("Are you looking for (S)ongs or (A)lbums? (or 'exit'): ").lower().strip()
+        query = input("\nDescribe your vibe or artist (or 'exit'): ").strip()
+        if query.lower() == 'exit': break
+        
+        mode = input("Looking for (S)ongs, (A)lbums, or (C)harts? ").lower().strip()
+        
+        if mode.startswith('c'):
+            print(get_current_hits())
+            continue
 
-        if category == 'exit':
-            print("Exiting...")
-            break
+        # The Hybrid logic: AI first, Fallback second
+        tags = get_ai_refined_tags(query)
+        print(f"🏷️  Keywords: {', '.join(tags)}")
 
-        elif category.startswith('s'):
-            print("\n🎵 --- SONG MODE ---")
-            mode = input("Search by (G)enre, (S)imilar to a song, or (C)harts? ").lower().strip()
-            
-            if mode.startswith('g'):
-                tag = input("Enter a Genre: ").strip()
-                possible_subs = get_manual_subgenres(tag)
-                if possible_subs:
-                    print(f"   Options: {possible_subs}")
-                    refinement = input("   Type a sub-genre (or Enter to skip): ").strip()
-                    if refinement: tag = refinement
-                print(get_tracks_by_tag(tag))
-                
-            elif mode.startswith('s'):
-                artist = input("Enter an Artist you like: ").strip()
-                print(get_similar_tracks(artist))
-                
-            elif mode.startswith('c'):
-                print(get_current_hits())
-                
-            else:
-                print("Invalid song command.")
-
-        elif category.startswith('a'):
-            print("\n💿 --- ALBUM MODE ---")
-            mode = input("Search by (G)enre or (A)rtist? ").lower().strip()
-            
-            if mode.startswith('a'):
-                artist = input("Enter the Artist: ").strip()
-                print(get_top_albums(artist))
-            
-            elif mode.startswith('g'):
-                tag = input("Enter a Genre (e.g. Rap, Jazz): ").strip()
-                possible_subs = get_manual_subgenres(tag)
-                if possible_subs:
-                    print(f"   Options: {possible_subs}")
-                    refinement = input("   Type a sub-genre (or Enter to skip): ").strip()
-                    if refinement: tag = refinement
-                
-                print(get_albums_by_genre(tag))
-            
-            else:
-                print("Invalid album command.")
-
-        else:
-            print("Please type 's' for Songs or 'a' for Albums.")
+        final_output = ""
+        for tag in tags:
+            if mode.startswith('s'):
+                final_output += get_tracks_by_tag(tag)
+            elif mode.startswith('a'):
+                final_output += get_albums_by_genre(tag)
+        
+        print(final_output if final_output else "No results found.")

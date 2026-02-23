@@ -1,6 +1,6 @@
 import tkinter as tk
-from tkinter import ttk, messagebox, simpledialog
-import main
+from tkinter import ttk, messagebox
+import main  
 
 class MusicApp:
     def __init__(self, root):
@@ -9,8 +9,8 @@ class MusicApp:
         BOX_COLOR = "#282828"
         
         self.root = root
-        self.root.title("Music Recommender")
-        self.root.geometry("800x700")
+        self.root.title("Music Discovery Engine")
+        self.root.geometry("800x750")
         self.root.configure(bg=BG_COLOR)
 
         self.style = ttk.Style()
@@ -31,30 +31,28 @@ class MusicApp:
         control_frame.pack(pady=10)
 
         self.mode_var = tk.StringVar(value="song") 
-        
-        ttk.Radiobutton(control_frame, text="Find Songs 🎵", variable=self.mode_var, value="song").pack(side=tk.LEFT, padx=20)
-        ttk.Radiobutton(control_frame, text="Find Albums 💿", variable=self.mode_var, value="album").pack(side=tk.LEFT, padx=20)
+        ttk.Radiobutton(control_frame, text="Find Songs", variable=self.mode_var, value="song").pack(side=tk.LEFT, padx=20)
+        ttk.Radiobutton(control_frame, text="Find Albums", variable=self.mode_var, value="album").pack(side=tk.LEFT, padx=20)
 
         input_frame = ttk.Frame(root)
         input_frame.pack(pady=15)
+        ttk.Label(input_frame, text="Provide search context or artist name:").pack()
         
-        ttk.Label(input_frame, text="Enter Artist or Genre:").pack()
-        
-        self.entry = ttk.Entry(input_frame, width=40, font=("Helvetica", 14))
+        self.entry = ttk.Entry(input_frame, width=45, font=("Helvetica", 14))
         self.entry.pack(pady=5)
         self.entry.bind('<Return>', lambda event: self.run_search())
 
         btn_frame = ttk.Frame(root)
         btn_frame.pack(pady=10)
-
         ttk.Button(btn_frame, text="SEARCH", command=self.run_search).pack(side=tk.LEFT, padx=10)
         ttk.Button(btn_frame, text="LAST.FM CHARTS", command=self.show_charts).pack(side=tk.LEFT, padx=10)
+        ttk.Button(btn_frame, text="EXPORT PLAYLIST", command=self.save_playlist).pack(side=tk.LEFT, padx=10)
 
         result_frame = ttk.Frame(root)
         result_frame.pack(pady=20, padx=30, fill="both", expand=True)
 
-        self.results_text = tk.Text(result_frame, height=15, 
-                                    font=("Courier New", 13), 
+        self.results_text = tk.Text(result_frame, height=18, 
+                                    font=("Courier New", 12), 
                                     bg=BOX_COLOR,
                                     fg=TEXT_COLOR,
                                     insertbackground="white",
@@ -72,7 +70,8 @@ class MusicApp:
         self.results_text.delete(1.0, tk.END)
 
     def display_result(self, text):
-        self.results_text.insert(tk.END, text + "\n" + "-"*50 + "\n")
+        self.results_text.insert(tk.END, text + "\n")
+        self.results_text.insert(tk.END, "-"*60 + "\n")
         self.results_text.see(tk.END)
 
     def run_search(self):
@@ -80,47 +79,58 @@ class MusicApp:
         mode = self.mode_var.get()
         
         if not query:
-            messagebox.showwarning("Input Error", "Please enter an artist or genre!")
+            messagebox.showwarning("Input Required", "Please provide a search term.")
             return
 
-        possible_subs = main.get_manual_subgenres(query)
-        if possible_subs:
-            options_str = ", ".join(possible_subs)
-            refinement = simpledialog.askstring(
-                "Sub-Genre Found", 
-                f"Found: {options_str}\n\nType one below or leave blank:",
-                parent=self.root
-            )
-            if refinement:
-                query = refinement.strip()
+        self.results_text.insert(tk.END, f"STATUS: Analyzing '{query}'...\n")
+        self.root.update_idletasks()
 
-        self.results_text.insert(tk.END, f" Searching for '{query}'...\n")
-        result_string = ""
-        
         try:
-            if mode == 'song':
-                if query.lower() in main.GENRE_MAP or possible_subs:
-                    result_string = main.get_tracks_by_tag(query)
+            # Execute Hybrid AI Discovery
+            tags = main.get_ai_refined_tags(query)
+            self.results_text.insert(tk.END, f"METADATA TAGS: {', '.join(tags)}\n")
+            
+            result_string = ""
+            for tag in tags:
+                if mode == 'song':
+                    result_string += main.get_tracks_by_tag(tag)
                 else:
+                    result_string += main.get_albums_by_genre(tag)
+            
+            # Secondary check for direct artist matches if tag search is insufficient
+            if not result_string.strip():
+                if mode == 'song':
                     result_string = main.get_similar_tracks(query)
-
-            elif mode == 'album':
-                if query.lower() in main.GENRE_MAP or possible_subs:
-                    result_string = main.get_albums_by_genre(query)
                 else:
                     result_string = main.get_top_albums(query)
-            
-            self.display_result(result_string)
+
+            self.display_result(result_string if result_string.strip() else "No data returned for this query.")
             
         except Exception as e:
-            self.display_result(f"Error: {e}")
+            self.display_result(f"SYSTEM ERROR: {e}")
+
+    def save_playlist(self):
+        content = self.results_text.get(1.0, tk.END).strip()
+        if not content:
+            messagebox.showwarning("Export Failed", "No data available to export.")
+            return
+
+        filename = "music_discovery_session.txt"
+        try:
+            with open(filename, "a", encoding="utf-8") as f:
+                f.write("\n" + "="*60 + "\n")
+                f.write(f"EXPORT SESSION: {query if 'query' in locals() else 'System Search'}\n")
+                f.write(content + "\n")
+            messagebox.showinfo("Export Success", f"Data appended to {filename}.")
+        except Exception as e:
+            messagebox.showerror("Export Error", f"Failed to write file: {e}")
 
     def show_charts(self):
         try:
             result_string = main.get_current_hits()
             self.display_result(result_string)
         except Exception as e:
-            self.display_result(f"Error: {e}")
+            self.display_result(f"SYSTEM ERROR: {e}")
 
 if __name__ == "__main__":
     root = tk.Tk()
